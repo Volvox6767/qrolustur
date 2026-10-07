@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>qrolustur — QR kod üretici (offline, kayıtsız, süresiz)</title>
+<meta name="description" content="Link veya WiFi için QR kod üret. Çevrimdışı çalışır, kayıt yok, takip yok, süre yok. Tek HTML dosyası.">
+<style>
+:root{--bg:#0f1115;--card:#181b22;--fg:#eef0f4;--sub:#9aa3b2;--acc:#4f8cff;--ok:#34c98e}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px}
+header{text-align:center;margin-bottom:18px}
+header h1{font-size:26px}
+header p{color:var(--sub);font-size:13px;margin-top:4px}
+.card{background:var(--card);border:1px solid #262b36;border-radius:14px;padding:20px;width:100%;max-width:430px}
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tab{flex:1;padding:10px;border:1px solid #2c3342;background:none;color:var(--sub);border-radius:8px;cursor:pointer;font-weight:700}
+.tab.active{background:var(--acc);border-color:var(--acc);color:#fff}
+label{display:block;font-size:12px;color:var(--sub);margin:10px 0 5px}
+input{width:100%;padding:11px;border:1px solid #2c3342;border-radius:8px;background:#0d0f14;color:var(--fg);font-size:15px}
+input:focus{outline:none;border-color:var(--acc)}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+.qrbox{margin:18px auto 0;background:#fff;border-radius:12px;padding:16px;width:fit-content;display:none}
+.qrbox.show{display:block}
+.actions{display:none;gap:10px;margin-top:14px}
+.actions.show{display:flex}
+.btn{flex:1;padding:12px;border:none;border-radius:9px;background:var(--acc);color:#fff;font-weight:800;cursor:pointer;font-size:14px}
+.btn.ghost{background:none;border:1px solid #2c3342;color:var(--fg)}
+footer{margin-top:auto;padding-top:22px;font-size:11px;color:var(--sub);text-align:center}
+footer a{color:var(--sub)}
+.note{font-size:11px;color:var(--sub);text-align:center;margin-top:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>qrolustur</h1>
+  <p>Link veya WiFi QR kodu — çevrimdışı, kayıtsız, süresiz · by <a style="color:var(--sub)" href="https://www.instagram.com/ahmetgedik67" target="_blank" rel="noopener">Ahmet Gedik</a></p>
+</header>
+
+<div class="card">
+  <div class="tabs">
+    <button class="tab active" id="tabLink" onclick="setMode('link')">🔗 Link</button>
+    <button class="tab" id="tabWifi" onclick="setMode('wifi')">📶 WiFi</button>
+  </div>
+
+  <div id="formLink">
+    <label>Link / metin (EN: link or text)</label>
+    <input id="inLink" placeholder="https://ornek.com" oninput="update()">
+  </div>
+
+  <div id="formWifi" style="display:none">
+    <label>Ağ adı / Network name (SSID)</label>
+    <input id="wSsid" placeholder="EvAgi" oninput="update()">
+    <label>Şifre / Password</label>
+    <input id="wPass" placeholder="••••••••" oninput="update()">
+    <div class="row">
+      <div>
+        <label>Şifreleme / Security</label>
+        <select id="wEnc" style="width:100%;padding:11px;border:1px solid #2c3342;border-radius:8px;background:#0d0f14;color:var(--fg)" onchange="update()">
+          <option value="WPA">WPA/WPA2/WPA3</option>
+          <option value="WEP">WEP</option>
+          <option value="nopass">Şifresiz / none</option>
+        </select>
+      </div>
+      <div>
+        <label>Gizli ağ / Hidden</label>
+        <select id="wHid" style="width:100%;padding:11px;border:1px solid #2c3342;border-radius:8px;background:#0d0f14;color:var(--fg)" onchange="update()">
+          <option value="false">Hayır / No</option>
+          <option value="true">Evet / Yes</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="qrbox" id="qrbox"><canvas id="cv"></canvas></div>
+
+  <div class="actions" id="actions">
+    <button class="btn" onclick="downloadPNG()">⬇ PNG indir / Download</button>
+    <button class="btn ghost" onclick="printCard()">🖨 Yazdır / Print</button>
+  </div>
+
+  <div class="note" id="note">İnternet kesilse bile çalışır — QR kodu cihazında üretilir, hiçbir yere gönderilmez.</div>
+</div>
+
+<footer>made with ❤ by <a href="https://www.instagram.com/ahmetgedik67" target="_blank" rel="noopener">Ahmet Gedik</a> · offline · no data sent · tek dosya / single file</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+'use strict';
+/* qrolustur — offline QR generator. by Ahmet Gedik — instagram.com/ahmetgedik67 */
+let mode = "link";
+
+function setMode(m) {
+  mode = m;
+  document.getElementById("tabLink").classList.toggle("active", m === "link");
+  document.getElementById("tabWifi").classList.toggle("active", m === "wifi");
+  document.getElementById("formLink").style.display = m === "link" ? "" : "none";
+  document.getElementById("formWifi").style.display = m === "wifi" ? "" : "none";
+  update();
+}
+
+function esc(s) {
+  return s.replace(/([\\;,:"])/g, "\\$1");
+}
+
+function payload() {
+  if (mode === "link") {
+    const v = document.getElementById("inLink").value.trim();
+    return v || null;
+  }
+  const ssid = document.getElementById("wSsid").value.trim();
+  if (!ssid) return null;
+  const pass = document.getElementById("wPass").value;
+  const enc = document.getElementById("wEnc").value;
+  const hid = document.getElementById("wHid").value === "true" ? "H:true;" : "";
+  const p = enc === "nopass" ? "" : "P:" + esc(pass) + ";";
+  return "WIFI:T:" + enc + ";S:" + esc(ssid) + ";" + p + hid + ";";
+}
+
+let lastData = null;
+function update() {
+  const data = payload();
+  const box = document.getElementById("qrbox");
+  const act = document.getElementById("actions");
+  if (!data || data === lastData) { if (!data) { box.classList.remove("show"); act.classList.remove("show"); } return; }
+  lastData = data;
+  try {
+    const qr = qrcode(0, "M");
+    qr.addData(data);
+    qr.make();
+    const n = qr.getModuleCount();
+    const scale = Math.max(4, Math.floor(240 / n));
+    const size = n * scale;
+    const cv = document.getElementById("cv");
+    cv.width = size; cv.height = size;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = "#000";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
+      if (qr.isDark(r, c)) ctx.fillRect(c * scale, r * scale, scale, scale);
+    box.classList.add("show");
+    act.classList.add("show");
+    document.getElementById("note").textContent = mode === "wifi"
+      ? "Telefon kamerası bu kodu okutunca WiFi'ye otomatik bağlar. Duvara asıp misafirlere göster!"
+      : "İnternet kesilse bile çalışır — QR kodu cihazında üretilir, hiçbir yere gönderilmez.";
+  } catch (e) {
+    document.getElementById("note").textContent = "Metin çok uzun — kısaltıp dene / text too long";
+  }
+}
+
+function downloadPNG() {
+  const cv = document.getElementById("cv");
+  const a = document.createElement("a");
+  a.download = (mode === "wifi" ? "wifi" : "qr") + "-qrolustur.png";
+  a.href = cv.toDataURL("image/png");
+  a.click();
+}
+
+function printCard() {
+  const cv = document.getElementById("cv");
+  const w = window.open("", "_blank");
+  w.document.write('<html><head><title>qrolustur</title></head><body style="text-align:center;font-family:sans-serif">' +
+    '<img src="' + cv.toDataURL() + '" style="width:70mm">' +
+    '<p style="color:#888">made with ❤ by Ahmet Gedik — instagram.com/ahmetgedik67</p></body></html>');
+  w.document.close();
+  w.print();
+}
+</script>
+</body>
+</html>
